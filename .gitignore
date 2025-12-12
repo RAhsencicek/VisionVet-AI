@@ -1,0 +1,35 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Python virtual environments (should not be in Android project)
+venv/
+__pycache__/
+*.py
+
+# Backup files
+*.backup
+
+# IDE
+.idea/
+*.ipr
+*.iws
+
+# Build outputs
+app/build/
+build/
+
+# Test images
+test_bacterial_images/
