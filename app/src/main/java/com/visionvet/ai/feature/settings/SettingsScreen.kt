@@ -1,230 +1,179 @@
 package com.visionvet.ai.feature.settings
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.visionvet.ai.ui.theme.VisionVetAITheme
+import com.visionvet.ai.ui.components.GlassmorphicCard
+import com.visionvet.ai.ui.theme.*
 
+/**
+ * Modern Settings Screen
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    onLogout: () -> Unit
+    onNavigateBack: () -> Unit = {}
 ) {
-    var showLogoutDialog by remember { mutableStateOf(false) }
+    var darkModeEnabled by remember { mutableStateOf(true) }
     var notificationsEnabled by remember { mutableStateOf(true) }
-    var autoUploadEnabled by remember { mutableStateOf(false) }
-
+    var showAboutDialog by remember { mutableStateOf(false) }
+    
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())
-            .padding(16.dp)
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         // Header
         Text(
-            text = "Settings",
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 24.dp)
+            text = "Ayarlar",
+            style = MaterialTheme.typography.headlineMedium.copy(
+                fontWeight = FontWeight.Bold
+            ),
+            color = Color.White
         )
-
-        // Profile Section
-        Card(
+        
+        // App Settings Section
+        SettingsSection(title = "Uygulama") {
+            SettingsToggleItem(
+                icon = Icons.Outlined.DarkMode,
+                title = "Karanlık Mod",
+                subtitle = "Koyu tema kullan",
+                checked = darkModeEnabled,
+                onCheckedChange = { darkModeEnabled = it }
+            )
+            
+            SettingsToggleItem(
+                icon = Icons.Outlined.Notifications,
+                title = "Bildirimler",
+                subtitle = "Analiz sonuçları için bildirim al",
+                checked = notificationsEnabled,
+                onCheckedChange = { notificationsEnabled = it }
+            )
+        }
+        
+        // Model Info Section
+        SettingsSection(title = "Model Bilgisi") {
+            SettingsInfoItem(
+                icon = Icons.Outlined.Memory,
+                title = "Model Versiyonu",
+                value = "MobileNetV3-Large"
+            )
+            
+            SettingsInfoItem(
+                icon = Icons.Outlined.Category,
+                title = "Sınıf Sayısı",
+                value = "33 bakteri türü"
+            )
+            
+            SettingsInfoItem(
+                icon = Icons.Outlined.Speed,
+                title = "Çalışma Modu",
+                value = "On-Device (Offline)"
+            )
+        }
+        
+        // About Section
+        SettingsSection(title = "Hakkında") {
+            SettingsClickableItem(
+                icon = Icons.Outlined.Info,
+                title = "Uygulama Hakkında",
+                subtitle = "Versiyon 1.0.0",
+                onClick = { showAboutDialog = true }
+            )
+            
+            SettingsClickableItem(
+                icon = Icons.Outlined.Description,
+                title = "Gizlilik Politikası",
+                subtitle = "Veri kullanımı hakkında",
+                onClick = { /* Open privacy policy */ }
+            )
+            
+            SettingsClickableItem(
+                icon = Icons.Outlined.Help,
+                title = "Yardım & Destek",
+                subtitle = "SSS ve iletişim",
+                onClick = { /* Open help */ }
+            )
+        }
+        
+        // Developer Credits
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            )
+                .padding(vertical = 20.dp),
+            contentAlignment = Alignment.Center
         ) {
             Column(
-                modifier = Modifier.padding(20.dp)
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Profile",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    text = "VisionVet AI",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = BacteriaBlue
                 )
-
-                SettingsItem(
-                    icon = Icons.Default.Person,
-                    title = "Account Information",
-                    subtitle = "Manage your profile details",
-                    onClick = { /* Navigate to profile */ }
+                Text(
+                    text = "Bakteriyel Koloni Analiz Sistemi",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
                 )
-
-                SettingsItem(
-                    icon = Icons.Default.Lock, // Security yerine Lock
-                    title = "Privacy & Security",
-                    subtitle = "Password, data protection",
-                    onClick = { /* Navigate to privacy */ }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "© 2024",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextTertiary
                 )
             }
         }
-
-        // Preferences Section
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp)
-            ) {
-                Text(
-                    text = "Preferences",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-
-                SettingsToggleItem(
-                    icon = Icons.Default.Notifications,
-                    title = "Notifications",
-                    subtitle = "Get notified about analysis results",
-                    isChecked = notificationsEnabled,
-                    onToggle = { notificationsEnabled = it }
-                )
-
-                SettingsToggleItem(
-                    icon = Icons.Default.CloudUpload,
-                    title = "Auto Upload",
-                    subtitle = "Automatically upload analyses to cloud",
-                    isChecked = autoUploadEnabled,
-                    onToggle = { autoUploadEnabled = it }
-                )
-
-                SettingsItem(
-                    icon = Icons.Default.Palette,
-                    title = "Appearance",
-                    subtitle = "Theme, colors, display options",
-                    onClick = { /* Navigate to appearance */ }
-                )
-            }
-        }
-
-        // Data & Storage Section
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp)
-            ) {
-                Text(
-                    text = "Data & Storage",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-
-                SettingsItem(
-                    icon = Icons.Default.Storage,
-                    title = "Data Management",
-                    subtitle = "Export, backup, clear data",
-                    onClick = { /* Navigate to data management */ }
-                )
-
-                SettingsItem(
-                    icon = Icons.Default.CloudSync,
-                    title = "Sync Settings",
-                    subtitle = "Configure cloud synchronization",
-                    onClick = { /* Navigate to sync settings */ }
-                )
-            }
-        }
-
-        // Support Section
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp)
-            ) {
-                Text(
-                    text = "Support",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-
-                SettingsItem(
-                    icon = Icons.Default.Help,
-                    title = "Help & Support",
-                    subtitle = "FAQs, contact support",
-                    onClick = { /* Navigate to help */ }
-                )
-
-                SettingsItem(
-                    icon = Icons.Default.Info,
-                    title = "About",
-                    subtitle = "Version, licenses, credits",
-                    onClick = { /* Navigate to about */ }
-                )
-            }
-        }
-
-        // Logout Section
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.1f)
-            )
-        ) {
-            SettingsItem(
-                icon = Icons.AutoMirrored.Filled.ExitToApp,
-                title = "Logout",
-                subtitle = "Sign out of your account",
-                onClick = { showLogoutDialog = true },
-                titleColor = MaterialTheme.colorScheme.error
-            )
-        }
+        
+        // Bottom spacing
+        Spacer(modifier = Modifier.height(80.dp))
     }
-
-    // Logout confirmation dialog
-    if (showLogoutDialog) {
+    
+    // About Dialog
+    if (showAboutDialog) {
         AlertDialog(
-            onDismissRequest = { showLogoutDialog = false },
-            title = { Text("Logout") },
-            text = { Text("Are you sure you want to logout?") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showLogoutDialog = false
-                        onLogout()
-                    }
-                ) {
-                    Text("Logout", color = MaterialTheme.colorScheme.error)
+            onDismissRequest = { showAboutDialog = false },
+            containerColor = DarkCard,
+            title = {
+                Text(
+                    text = "VisionVet AI",
+                    color = Color.White
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Bakteriyel koloni görüntülerini yapay zeka ile analiz eden mobil uygulama.",
+                        color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "• 33 farklı bakteri türü tanıma\n• Offline çalışma desteği\n• Hızlı ve güvenilir sonuçlar",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showLogoutDialog = false }) {
-                    Text("Cancel")
+            confirmButton = {
+                TextButton(onClick = { showAboutDialog = false }) {
+                    Text("Tamam", color = BacteriaBlue)
                 }
             }
         )
@@ -232,50 +181,29 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun SettingsItem(
-    icon: ImageVector,
+private fun SettingsSection(
     title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-    titleColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface
+    content: @Composable ColumnScope.() -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = titleColor,
-            modifier = Modifier
-                .size(24.dp)
-                .padding(end = 16.dp)
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            color = TextSecondary,
+            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
         )
-
-        Column(
-            modifier = Modifier.weight(1f)
+        
+        GlassmorphicCard(
+            modifier = Modifier.fillMaxWidth(),
+            cornerRadius = 20.dp
         ) {
-            Text(
-                text = title,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                color = titleColor
-            )
-            Text(
-                text = subtitle,
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                content = content
             )
         }
-
-        Icon(
-            Icons.AutoMirrored.Filled.ArrowForward,
-            contentDescription = "Navigate",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp)
-        )
     }
 }
 
@@ -284,94 +212,169 @@ private fun SettingsToggleItem(
     icon: ImageVector,
     title: String,
     subtitle: String,
-    isChecked: Boolean,
-    onToggle: (Boolean) -> Unit
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 12.dp),
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier
-                .size(24.dp)
-                .padding(end = 16.dp)
-        )
-
-        Column(
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.weight(1f)
         ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(
+                        color = BacteriaBlue.copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = BacteriaBlue,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color.White
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
+        }
+        
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = BacteriaBlue,
+                uncheckedThumbColor = TextSecondary,
+                uncheckedTrackColor = DarkCardBorder
+            )
+        )
+    }
+}
+
+@Composable
+private fun SettingsInfoItem(
+    icon: ImageVector,
+    title: String,
+    value: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(
+                        color = ElectricPurple.copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = ElectricPurple,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            
             Text(
                 text = title,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = subtitle,
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color.White
             )
         }
-
-        Switch(
-            checked = isChecked,
-            onCheckedChange = onToggle
+        
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextSecondary
         )
     }
 }
 
-// MARK: - Preview Functions (Swift benzeri)
-@Preview(showBackground = true)
 @Composable
-fun SettingsScreenPreview() {
-    VisionVetAITheme {
-        SettingsScreen(
-            onLogout = {}
-        )
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun SettingsScreenDarkPreview() {
-    VisionVetAITheme(darkTheme = true) {
-        SettingsScreen(
-            onLogout = {}
-        )
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun SettingsItemPreview() {
-    VisionVetAITheme {
-        Column(modifier = Modifier.padding(16.dp)) {
-            SettingsItem(
-                icon = Icons.Default.Person,
-                title = "Account Information",
-                subtitle = "Manage your profile details",
-                onClick = {}
-            )
+private fun SettingsClickableItem(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(
+                        color = MicrobeGreen.copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MicrobeGreen,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color.White
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
         }
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun SettingsToggleItemPreview() {
-    VisionVetAITheme {
-        Column(modifier = Modifier.padding(16.dp)) {
-            SettingsToggleItem(
-                icon = Icons.Default.Notifications,
-                title = "Notifications",
-                subtitle = "Get notified about analysis results",
-                isChecked = true,
-                onToggle = {}
+        
+        IconButton(onClick = onClick) {
+            Icon(
+                imageVector = Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = TextSecondary
             )
         }
     }

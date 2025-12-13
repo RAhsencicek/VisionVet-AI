@@ -31,10 +31,34 @@ class BacterialClassifier(private val context: Context) {
     
     private var isInitialized = false
     
+    // Store last inference stats for validation
+    private var lastMaxLogit: Float = 0f
+    private var lastLogitVariance: Float = 0f
+    
     companion object {
         private const val TAG = "BacterialClassifier"
         private const val MODEL_NAME = "mobilenet_v3_large.onnx"
         private const val LABELS_NAME = "labels_33.txt"
+        
+        // Minimum softmax confidence threshold
+        const val MIN_VALID_CONFIDENCE_THRESHOLD = 50f // 50% - increased for stricter validation
+        
+        // Raw logit thresholds for OOD (out-of-distribution) detection
+        // IMPORTANT: These thresholds are model-specific and calibrated based on testing
+        // 
+        // Based on testing (2024-12-13):
+        // - Staphylococcus_aureus (valid): maxLogit=14.29, variance=14.17 → SHOULD PASS
+        // - Candida OOD test: maxLogit=20.11, variance=18.83 → SHOULD FAIL (high logit)
+        // - Random image: maxLogit=8.54, variance=7.85 → SHOULD FAIL (low activation)
+        //
+        // Calibrated thresholds:
+        private const val MIN_LOGIT_THRESHOLD = 10.0f // Below this = model not activated
+        private const val MAX_LOGIT_THRESHOLD = 19.0f // Above this = OOD extreme response  
+        private const val MIN_VARIANCE_THRESHOLD = 10.0f // Lowered - allow valid bacteria
+        private const val MAX_VARIANCE_THRESHOLD = 60.0f // Reasonable upper bound
+        
+        // Entropy threshold - high entropy means model is uncertain (uniform distribution)
+        private const val MAX_ENTROPY_THRESHOLD = 3.0f
     }
     
     /**
@@ -91,16 +115,22 @@ class BacterialClassifier(private val context: Context) {
             val outputs = ortSession?.run(mapOf("input" to inputTensor))
                 ?: throw BacterialClassifierException("Session is null")
             
-            // Get output tensor
+            // Get output tensor (raw logits)
             val outputTensor = outputs[0].value as Array<FloatArray>
-            val probabilities = outputTensor[0]
+            val logits = outputTensor[0]
+            
+            // Store raw logit stats for validation
+            lastMaxLogit = logits.maxOrNull() ?: 0f
+            lastLogitVariance = calculateVariance(logits)
+            
+            Log.d(TAG, "Raw logits - Max: $lastMaxLogit, Variance: $lastLogitVariance")
             
             // Clean up
             inputTensor.close()
             outputs.close()
             
             // Apply softmax and create predictions
-            val softmaxProbs = softmax(probabilities)
+            val softmaxProbs = softmax(logits)
             val predictions = softmaxProbs.mapIndexed { index, probability ->
                 Prediction(
                     className = labels.getOrNull(index) ?: "Unknown_$index",
@@ -196,6 +226,98 @@ class BacterialClassifier(private val context: Context) {
     }
     
     /**
+     * Calculate variance of logits - important for OOD detection
+     * Low variance in logits often indicates out-of-distribution input
+     */
+    private fun calculateVariance(values: FloatArray): Float {
+        val mean = values.average().toFloat()
+        return values.map { (it - mean) * (it - mean) }.average().toFloat()
+    }
+    
+    /**
+     * Calculate Shannon entropy to measure uncertainty
+     * High entropy = uncertain/uniform distribution = likely invalid image
+     * Low entropy = confident prediction = likely valid bacterial image
+     */
+    private fun calculateEntropy(probabilities: FloatArray): Float {
+        return -probabilities.filter { it > 0 }
+            .map { p -> p * kotlin.math.ln(p.toDouble()).toFloat() }
+            .sum() / kotlin.math.ln(probabilities.size.toDouble()).toFloat()
+    }
+    
+    /**
+     * Check if the classification result is valid (likely a bacterial colony image)
+     * Uses multiple heuristics:
+     * 1. Max logit value - should be reasonably high for in-distribution images
+     * 2. Logit variance - should be high for confident predictions
+     * 3. Top prediction confidence gap
+     * 
+     * IMPORTANT: Softmax can give high confidence even for out-of-distribution images
+     * because it forces outputs to sum to 1. Raw logit values are more reliable
+     * for detecting whether the image is truly a bacterial colony.
+     */
+    fun isValidClassification(predictions: List<Prediction>): Boolean {
+        if (predictions.isEmpty()) return false
+        
+        val topConfidence = predictions.first().confidence
+        
+        Log.d(TAG, "Validation check - MaxLogit: $lastMaxLogit, Variance: $lastLogitVariance, TopConf: $topConfidence%")
+        
+        // Check 1: Max logit value RANGE - for in-distribution bacterial images, 
+        // the model should have reasonably strong activation, but NOT extreme values
+        // Extreme logit values (>50) often indicate OOD data causing model "overconfidence"
+        if (lastMaxLogit < MIN_LOGIT_THRESHOLD) {
+            Log.d(TAG, "Invalid: Max logit $lastMaxLogit below threshold $MIN_LOGIT_THRESHOLD (weak model activation)")
+            return false
+        }
+        if (lastMaxLogit > MAX_LOGIT_THRESHOLD) {
+            Log.d(TAG, "Invalid: Max logit $lastMaxLogit above threshold $MAX_LOGIT_THRESHOLD (extreme OOD response)")
+            return false
+        }
+        
+        // Check 2: Logit variance - in-distribution images produce varied but reasonable logits
+        // Very low variance: model uncertain (uniform distribution)
+        // Very high variance: model giving extreme responses to OOD data
+        if (lastLogitVariance < MIN_VARIANCE_THRESHOLD) {
+            Log.d(TAG, "Invalid: Logit variance $lastLogitVariance below threshold $MIN_VARIANCE_THRESHOLD (model uncertain)")
+            return false
+        }
+        if (lastLogitVariance > MAX_VARIANCE_THRESHOLD) {
+            Log.d(TAG, "Invalid: Logit variance $lastLogitVariance above threshold $MAX_VARIANCE_THRESHOLD (extreme OOD response)")
+            return false
+        }
+        
+        // Check 3: Top confidence must be above softmax threshold
+        if (topConfidence < MIN_VALID_CONFIDENCE_THRESHOLD) {
+            Log.d(TAG, "Invalid: Top confidence $topConfidence% below threshold $MIN_VALID_CONFIDENCE_THRESHOLD%")
+            return false
+        }
+        
+        // Check 4: The gap between top predictions
+        // If top 3 predictions are very close in confidence, model is confused
+        if (predictions.size >= 3) {
+            val top3 = predictions.take(3).map { it.confidence }
+            val gap = top3[0] - top3[2]
+            if (gap < 10f && topConfidence < 60f) {
+                Log.d(TAG, "Invalid: Top predictions too similar (gap: $gap%, top: $topConfidence%)")
+                return false
+            }
+        }
+        
+        Log.d(TAG, "Validation passed: Image appears to be a valid bacterial colony")
+        return true
+    }
+    
+    /**
+     * Get validation result with detailed feedback
+     */
+    data class ValidationResult(
+        val isValid: Boolean,
+        val message: String,
+        val topConfidence: Float
+    )
+    
+    /**
      * Copy asset file to cache directory
      * Required for ONNX Runtime to access external data files
      */
@@ -252,6 +374,134 @@ class BacterialClassifier(private val context: Context) {
         val probability: Float,
         val confidence: Float // Probability as percentage
     )
+    
+    /**
+     * Classification result with validation status
+     */
+    data class ClassificationResult(
+        val predictions: List<Prediction>,
+        val isValid: Boolean,
+        val validationMessage: String,
+        val topConfidence: Float
+    )
+    
+    /**
+     * Classify with validation - returns result with validity check
+     */
+    suspend fun classifyWithValidation(bitmap: Bitmap, k: Int = 5): ClassificationResult {
+        val predictions = classifyTopK(bitmap, k)
+        val isValid = isValidClassification(predictions)
+        val topConfidence = predictions.firstOrNull()?.confidence ?: 0f
+        
+        val message = when {
+            predictions.isEmpty() -> "Sınıflandırma başarısız"
+            !isValid && topConfidence < MIN_VALID_CONFIDENCE_THRESHOLD -> 
+                "Bu görüntü bakteri kolonisi gibi görünmüyor. Lütfen uygun bir görüntü seçin."
+            !isValid -> 
+                "Model bu görüntüyü güvenilir bir şekilde sınıflandıramadı. Daha net bir görüntü deneyin."
+            topConfidence < 50f -> 
+                "Düşük güvenilirlik - sonuçları dikkatli değerlendirin"
+            else -> "Sınıflandırma başarılı"
+        }
+        
+        Log.d(TAG, "Classification validation: valid=$isValid, topConfidence=$topConfidence%, message=$message")
+        
+        return ClassificationResult(
+            predictions = predictions,
+            isValid = isValid,
+            validationMessage = message,
+            topConfidence = topConfidence
+        )
+    }
+    
+    /**
+     * Detailed analysis result for debugging/testing model behavior
+     */
+    data class DetailedAnalysis(
+        val predictions: List<Prediction>,
+        val maxLogit: Float,
+        val logitVariance: Float,
+        val entropy: Float,
+        val top5Spread: Float, // Difference between 1st and 5th prediction
+        val isValid: Boolean,
+        val invalidReason: String?,
+        val recommendation: String
+    )
+    
+    /**
+     * Perform detailed analysis for testing model behavior
+     * Use this to check if model is overfitting or behaving correctly
+     */
+    suspend fun analyzeInDetail(bitmap: Bitmap): DetailedAnalysis {
+        val predictions = classify(bitmap)
+        val top5 = predictions.take(5)
+        
+        val top5Spread = if (top5.size >= 5) {
+            top5[0].confidence - top5[4].confidence
+        } else {
+            top5.firstOrNull()?.confidence ?: 0f
+        }
+        
+        // Calculate entropy for uncertainty measure
+        val entropy = calculateEntropy(predictions.map { it.probability }.toFloatArray())
+        
+        // Determine validity and reason
+        val invalidReason = when {
+            lastMaxLogit < MIN_LOGIT_THRESHOLD -> "Logit çok düşük (${lastMaxLogit} < $MIN_LOGIT_THRESHOLD)"
+            lastMaxLogit > MAX_LOGIT_THRESHOLD -> "Logit çok yüksek (${lastMaxLogit} > $MAX_LOGIT_THRESHOLD) - OOD"
+            lastLogitVariance < MIN_VARIANCE_THRESHOLD -> "Varyans çok düşük (${lastLogitVariance} < $MIN_VARIANCE_THRESHOLD)"
+            lastLogitVariance > MAX_VARIANCE_THRESHOLD -> "Varyans çok yüksek (${lastLogitVariance} > $MAX_VARIANCE_THRESHOLD) - OOD"
+            top5[0].confidence < MIN_VALID_CONFIDENCE_THRESHOLD -> "Güven çok düşük (${top5[0].confidence}%)"
+            else -> null
+        }
+        
+        val isValid = invalidReason == null
+        
+        // Generate recommendation based on analysis
+        val recommendation = when {
+            !isValid && lastMaxLogit > MAX_LOGIT_THRESHOLD -> 
+                "⚠️ Bu görüntü bakteriyel koloni değil gibi görünüyor. Model aşırı tepki veriyor."
+            !isValid && lastLogitVariance > MAX_VARIANCE_THRESHOLD -> 
+                "⚠️ Model bu görüntü için çok belirsiz. Muhtemelen eğitim verisine benzemiyor."
+            isValid && top5Spread > 90f -> 
+                "✅ Model çok emin. Ezberleme riski düşük - benzersiz özellikler tespit edilmiş."
+            isValid && top5Spread > 70f -> 
+                "✅ İyi tahmin. Model güvenilir görünüyor."
+            isValid && top5Spread < 30f -> 
+                "⚠️ Top tahminler birbirine çok yakın. Model belirsiz veya görüntü bulanık olabilir."
+            isValid && entropy < 0.1f -> 
+                "⚠️ Çok düşük entropi - Model aşırı emin. Ezberleme olabilir."
+            isValid && entropy > 0.5f -> 
+                "ℹ️ Yüksek entropi - Model birkaç sınıf arasında kararsız."
+            else -> "✅ Normal tahmin davranışı."
+        }
+        
+        Log.d(TAG, """
+            |=== DETAILED ANALYSIS ===
+            |Top Prediction: ${top5.firstOrNull()?.className} (${top5.firstOrNull()?.confidence}%)
+            |MaxLogit: $lastMaxLogit
+            |Variance: $lastLogitVariance  
+            |Entropy: $entropy
+            |Top5 Spread: $top5Spread%
+            |Valid: $isValid
+            |Reason: ${invalidReason ?: "None"}
+            |Recommendation: $recommendation
+            |Top 5 Predictions:
+            |${top5.mapIndexed { i, p -> "  ${i+1}. ${p.className}: ${p.confidence}%" }.joinToString("\n")}
+            |=========================
+        """.trimMargin())
+        
+        return DetailedAnalysis(
+            predictions = top5,
+            maxLogit = lastMaxLogit,
+            logitVariance = lastLogitVariance,
+            entropy = entropy,
+            top5Spread = top5Spread,
+            isValid = isValid,
+            invalidReason = invalidReason,
+            recommendation = recommendation
+        )
+    }
     
     /**
      * Custom exception for classifier errors

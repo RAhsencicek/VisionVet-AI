@@ -3,12 +3,13 @@ package com.visionvet.ai.core.database.converter
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.room.TypeConverter
-import com.visionvet.ai.core.database.model.ParasiteResult
-import com.visionvet.ai.core.database.model.ParasiteType
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import java.io.ByteArrayOutputStream
+import java.util.Date
 
+/**
+ * Room Database Type Converters
+ * Simplified for bacterial analysis
+ */
 class Converters {
 
     @TypeConverter
@@ -26,23 +27,12 @@ class Converters {
     }
 
     @TypeConverter
-    fun fromParasiteResultList(results: List<ParasiteResult>): String {
-        return Gson().toJson(results)
+    fun fromTimestamp(value: Long?): Date? {
+        return value?.let { Date(it) }
     }
 
     @TypeConverter
-    fun toParasiteResultList(resultsString: String): List<ParasiteResult> {
-        val listType = object : TypeToken<List<ParasiteResult>>() {}.type
-        return Gson().fromJson(resultsString, listType)
-    }
-
-    @TypeConverter
-    fun fromParasiteType(type: ParasiteType): String {
-        return type.name
-    }
-
-    @TypeConverter
-    fun toParasiteType(typeName: String): ParasiteType {
-        return ParasiteType.valueOf(typeName)
+    fun dateToTimestamp(date: Date?): Long? {
+        return date?.time
     }
 }

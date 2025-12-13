@@ -94,6 +94,12 @@ dependencies {
     // ONNX Runtime for Bacterial Colony Classification
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.19.2") // Updated for IR version 10 support
 
+    // Lottie Animations
+    implementation("com.airbnb.android:lottie-compose:6.3.0")
+    
+    // Splash Screen API
+    implementation("androidx.core:core-splashscreen:1.0.1")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
