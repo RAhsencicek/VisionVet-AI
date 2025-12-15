@@ -17,16 +17,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.visionvet.ai.core.database.VisionVetDatabase
+import com.visionvet.ai.core.database.model.BacterialResult
+import com.visionvet.ai.core.database.repository.BacterialRepository
 import com.visionvet.ai.ui.components.*
 import com.visionvet.ai.ui.theme.*
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.roundToInt
 
 /**
  * Modern Dashboard Screen
  * Features: Hero scan card, animated stats, recent analyses
+ * Now using REAL DATA from database!
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,16 +41,46 @@ fun DashboardScreen(
     onNavigateToScan: () -> Unit = {},
     onNavigateToHistory: () -> Unit = {}
 ) {
-    // Mock data for demo
-    val totalAnalyses = remember { 23 }
-    val todayAnalyses = remember { 3 }
-    val successRate = remember { 94.5f }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     
-    val recentAnalyses = remember {
-        listOf(
-            RecentAnalysis("Escherichia coli", 94.5f, "2 dakika önce", true),
-            RecentAnalysis("Staphylococcus aureus", 87.2f, "1 saat önce", true),
-            RecentAnalysis("Bilinmeyen örnek", 0f, "3 saat önce", false)
+    // Database setup
+    val database = remember { VisionVetDatabase.getDatabase(context) }
+    val repository = remember { BacterialRepository(database.bacterialResultDao()) }
+    
+    // Real data from database
+    var allResults by remember { mutableStateOf<List<BacterialResult>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    
+    // Load data from database
+    LaunchedEffect(Unit) {
+        launch {
+            repository.getAllResults().collect { results ->
+                allResults = results
+                isLoading = false
+            }
+        }
+    }
+    
+    // Calculate real stats
+    val totalAnalyses = allResults.size
+    val todayAnalyses = allResults.count { result ->
+        val today = Calendar.getInstance()
+        val resultDate = Calendar.getInstance().apply { timeInMillis = result.timestamp }
+        today.get(Calendar.YEAR) == resultDate.get(Calendar.YEAR) &&
+        today.get(Calendar.DAY_OF_YEAR) == resultDate.get(Calendar.DAY_OF_YEAR)
+    }
+    val successRate = if (allResults.isEmpty()) 0f else {
+        (allResults.count { it.isHighConfidence }.toFloat() / allResults.size * 100)
+    }
+    
+    // Get recent analyses (last 3)
+    val recentAnalyses = allResults.take(3).map { result ->
+        RecentAnalysis(
+            bacteriaName = result.topPrediction?.displayName ?: "Bilinmeyen",
+            confidence = result.topPrediction?.confidence ?: 0f,
+            timeAgo = getTimeAgo(result.timestamp),
+            isSuccess = result.topPrediction != null
         )
     }
     
@@ -56,7 +93,7 @@ fun DashboardScreen(
     ) {
         // Header
         item {
-            DashboardHeader()
+            DashboardHeader(isLoading = isLoading)
         }
         
         // Hero Scan Card
@@ -95,7 +132,7 @@ fun DashboardScreen(
 }
 
 @Composable
-private fun DashboardHeader() {
+private fun DashboardHeader(isLoading: Boolean = false) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -107,13 +144,25 @@ private fun DashboardHeader() {
                 style = MaterialTheme.typography.bodyLarge,
                 color = TextSecondary
             )
-            Text(
-                text = "VisionVet AI",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    fontWeight = FontWeight.Bold
-                ),
-                color = Color.White
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "VisionVet AI",
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = Color.White
+                )
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = BacteriaBlue
+                    )
+                }
+            }
         }
         
         // Notification bell
@@ -387,3 +436,22 @@ private data class RecentAnalysis(
     val timeAgo: String,
     val isSuccess: Boolean
 )
+
+/**
+ * Calculate relative time (e.g., "2 dakika önce")
+ */
+private fun getTimeAgo(timestamp: Long): String {
+    val now = System.currentTimeMillis()
+    val diff = now - timestamp
+    
+    return when {
+        diff < 60_000 -> "Az önce"
+        diff < 3600_000 -> "${(diff / 60_000).toInt()} dakika önce"
+        diff < 86400_000 -> "${(diff / 3600_000).toInt()} saat önce"
+        diff < 604800_000 -> "${(diff / 86400_000).toInt()} gün önce"
+        else -> {
+            val formatter = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+            formatter.format(Date(timestamp))
+        }
+    }
+}

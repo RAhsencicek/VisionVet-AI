@@ -75,6 +75,9 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     kapt("androidx.room:room-compiler:2.6.1")
+    
+    // DataStore for Settings
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
 
     // Networking
     implementation("com.squareup.retrofit2:retrofit:2.9.0")

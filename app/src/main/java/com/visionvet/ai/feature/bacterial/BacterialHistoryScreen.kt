@@ -36,6 +36,7 @@ import com.visionvet.ai.ui.components.GlassmorphicCard
 import com.visionvet.ai.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,6 +51,13 @@ fun BacterialHistoryScreen(
     var isLoading by remember { mutableStateOf(true) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var selectedResult by remember { mutableStateOf<BacterialResult?>(null) }
+    var showFilterSheet by remember { mutableStateOf(false) }
+    
+    // Filter states
+    var filterByConfidence by remember { mutableStateOf(false) }
+    var filterByDate by remember { mutableStateOf(false) }
+    var selectedDateRange by remember { mutableStateOf(DateRange.ALL) }
+    var minConfidence by remember { mutableStateOf(0f) }
     
     val database = remember { VisionVetDatabase.getDatabase(context) }
     val repository = remember { BacterialRepository(database.bacterialResultDao()) }
@@ -62,6 +70,40 @@ fun BacterialHistoryScreen(
                 isLoading = false
             }
         }
+    }
+    
+    // Apply filters
+    val filteredResults = remember(results, filterByConfidence, filterByDate, selectedDateRange, minConfidence) {
+        var filtered = results
+        
+        // Filter by confidence
+        if (filterByConfidence) {
+            filtered = filtered.filter { result ->
+                (result.topPrediction?.confidence ?: 0f) >= minConfidence
+            }
+        }
+        
+        // Filter by date
+        if (filterByDate) {
+            val now = System.currentTimeMillis()
+            filtered = when (selectedDateRange) {
+                DateRange.TODAY -> filtered.filter { 
+                    val diff = now - it.timestamp
+                    diff < 24 * 60 * 60 * 1000
+                }
+                DateRange.THIS_WEEK -> filtered.filter { 
+                    val diff = now - it.timestamp
+                    diff < 7 * 24 * 60 * 60 * 1000
+                }
+                DateRange.THIS_MONTH -> filtered.filter { 
+                    val diff = now - it.timestamp
+                    diff < 30 * 24 * 60 * 60 * 1000
+                }
+                DateRange.ALL -> filtered
+            }
+        }
+        
+        filtered
     }
     
     // Modern delete dialog
@@ -153,8 +195,10 @@ fun BacterialHistoryScreen(
         ) {
             // Modern Top Bar
             ModernHistoryTopBar(
-                totalCount = results.size,
-                onNavigateBack = onNavigateBack
+                totalCount = filteredResults.size,
+                onNavigateBack = onNavigateBack,
+                onFilterClick = { showFilterSheet = true },
+                hasActiveFilters = filterByConfidence || filterByDate
             )
             
             if (isLoading) {
@@ -179,9 +223,20 @@ fun BacterialHistoryScreen(
                         )
                     }
                 }
-            } else if (results.isEmpty()) {
-                // Empty State
-                EmptyHistoryState()
+            } else if (filteredResults.isEmpty()) {
+                // Empty State (filters active but no results)
+                if (results.isNotEmpty()) {
+                    EmptyFilterState(
+                        onClearFilters = {
+                            filterByConfidence = false
+                            filterByDate = false
+                            minConfidence = 0f
+                            selectedDateRange = DateRange.ALL
+                        }
+                    )
+                } else {
+                    EmptyHistoryState()
+                }
             } else {
                 // Content
                 LazyColumn(
@@ -192,14 +247,14 @@ fun BacterialHistoryScreen(
                     // Stats Header
                     item {
                         HistoryStatsCard(
-                            totalCount = results.size,
-                            highConfidenceCount = results.count { it.isHighConfidence },
-                            recentCount = results.take(7).size
+                            totalCount = filteredResults.size,
+                            highConfidenceCount = filteredResults.count { it.isHighConfidence },
+                            recentCount = filteredResults.take(7).size
                         )
                     }
                     
                     // Results List
-                    itemsIndexed(results) { index, result ->
+                    itemsIndexed(filteredResults) { index, result ->
                         var visible by remember { mutableStateOf(false) }
                         
                         LaunchedEffect(Unit) {
@@ -230,12 +285,35 @@ fun BacterialHistoryScreen(
             }
         }
     }
+    
+    // Filter Bottom Sheet
+    if (showFilterSheet) {
+        FilterBottomSheet(
+            onDismiss = { showFilterSheet = false },
+            filterByConfidence = filterByConfidence,
+            onFilterByConfidenceChange = { filterByConfidence = it },
+            minConfidence = minConfidence,
+            onMinConfidenceChange = { minConfidence = it },
+            filterByDate = filterByDate,
+            onFilterByDateChange = { filterByDate = it },
+            selectedDateRange = selectedDateRange,
+            onDateRangeChange = { selectedDateRange = it },
+            onClearAll = {
+                filterByConfidence = false
+                filterByDate = false
+                minConfidence = 0f
+                selectedDateRange = DateRange.ALL
+            }
+        )
+    }
 }
 
 @Composable
 private fun ModernHistoryTopBar(
     totalCount: Int,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onFilterClick: () -> Unit = {},
+    hasActiveFilters: Boolean = false
 ) {
     Box(
         modifier = Modifier
@@ -289,20 +367,32 @@ private fun ModernHistoryTopBar(
             }
             
             // Filter Icon (for future use)
-            IconButton(
-                onClick = { /* TODO: Add filter */ },
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(
-                        color = Color.White.copy(alpha = 0.1f),
-                        shape = CircleShape
+            Box {
+                IconButton(
+                    onClick = onFilterClick,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(
+                            color = if (hasActiveFilters) BacteriaBlue.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.1f),
+                            shape = CircleShape
+                        )
+                ) {
+                    Icon(
+                        Icons.Default.FilterList,
+                        contentDescription = "Filter",
+                        tint = if (hasActiveFilters) BacteriaBlue else Color.White
                     )
-            ) {
-                Icon(
-                    Icons.Default.FilterList,
-                    contentDescription = "Filter",
-                    tint = Color.White
-                )
+                }
+                
+                // Active filter indicator
+                if (hasActiveFilters) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(Color.Red, CircleShape)
+                            .align(Alignment.TopEnd)
+                    )
+                }
             }
         }
     }
@@ -619,4 +709,208 @@ private fun ModernHistoryCard(
             }
         }
     }
+}
+
+@Composable
+private fun EmptyFilterState(
+    onClearFilters: () -> Unit
+) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Icon(
+                Icons.Outlined.FilterAltOff,
+                contentDescription = null,
+                modifier = Modifier.size(80.dp),
+                tint = BacteriaBlue.copy(alpha = 0.5f)
+            )
+            
+            Text(
+                "Filtre Sonucu Bulunamadı",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+            
+            Text(
+                "Seçtiğiniz filtrelere uygun sonuç yok.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.6f)
+            )
+            
+            Button(
+                onClick = onClearFilters,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = BacteriaBlue
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(
+                    Icons.Default.FilterAltOff,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Filtreleri Temizle")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FilterBottomSheet(
+    onDismiss: () -> Unit,
+    filterByConfidence: Boolean,
+    onFilterByConfidenceChange: (Boolean) -> Unit,
+    minConfidence: Float,
+    onMinConfidenceChange: (Float) -> Unit,
+    filterByDate: Boolean,
+    onFilterByDateChange: (Boolean) -> Unit,
+    selectedDateRange: DateRange,
+    onDateRangeChange: (DateRange) -> Unit,
+    onClearAll: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = DarkCard,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Filtrele",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                
+                TextButton(onClick = onClearAll) {
+                    Icon(
+                        Icons.Default.FilterAltOff,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = Color.Red
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Temizle", color = Color.Red)
+                }
+            }
+            
+            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            
+            // Confidence Filter
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Güven Skoru",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White
+                    )
+                    Text(
+                        "Minimum ${minConfidence.toInt()}%",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                }
+                Switch(
+                    checked = filterByConfidence,
+                    onCheckedChange = onFilterByConfidenceChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = BacteriaBlue
+                    )
+                )
+            }
+            
+            if (filterByConfidence) {
+                Slider(
+                    value = minConfidence,
+                    onValueChange = onMinConfidenceChange,
+                    valueRange = 0f..100f,
+                    steps = 9,
+                    colors = SliderDefaults.colors(
+                        thumbColor = BacteriaBlue,
+                        activeTrackColor = BacteriaBlue,
+                        inactiveTrackColor = Color.White.copy(alpha = 0.2f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            
+            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            
+            // Date Filter
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Tarih Aralığı",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White
+                )
+                Switch(
+                    checked = filterByDate,
+                    onCheckedChange = onFilterByDateChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = BacteriaBlue
+                    )
+                )
+            }
+            
+            if (filterByDate) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    DateRange.values().forEach { range ->
+                        FilterChip(
+                            selected = selectedDateRange == range,
+                            onClick = { onDateRangeChange(range) },
+                            label = { Text(range.label) },
+                            modifier = Modifier.weight(1f),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = BacteriaBlue,
+                                selectedLabelColor = Color.White,
+                                containerColor = Color.White.copy(alpha = 0.1f),
+                                labelColor = Color.White.copy(alpha = 0.7f)
+                            )
+                        )
+                    }
+                }
+            }
+            
+            Spacer(Modifier.height(20.dp))
+        }
+    }
+}
+
+enum class DateRange(val label: String) {
+    TODAY("Bugün"),
+    THIS_WEEK("Bu Hafta"),
+    THIS_MONTH("Bu Ay"),
+    ALL("Tümü")
 }
